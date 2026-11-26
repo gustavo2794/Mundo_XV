@@ -102,6 +102,16 @@ export type MediaAsset = {
   createdAt?: string;
 };
 
+export type HiredVendorItem = {
+  id: string;
+  category: string;
+  name: string;
+  contactName?: string;
+  phone?: string;
+  arrivalTime?: string;
+  notes?: string;
+};
+
 export type UserProfile = {
   uid: string;
   displayName: string;
@@ -135,6 +145,7 @@ export type UserProfile = {
   checklist?: ChecklistItem[];
   godparents?: GodparentItem[];
   tables?: TableItem[];
+  hiredVendors?: HiredVendorItem[];
   createdAt?: unknown;
   updatedAt?: unknown;
 };

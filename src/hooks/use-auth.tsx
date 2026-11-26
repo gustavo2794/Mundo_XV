@@ -68,9 +68,15 @@ const getFriendlyErrorMessage = (error: unknown): string => {
     case 'auth/user-not-found':
     case 'auth/wrong-password':
     case 'auth/invalid-credential':
-      return 'Correo electrónico o contraseña incorrectos.';
+      return 'Correo electrónico o contraseña incorrectos (si te registraste con Google, usa el botón "Continuar con Google" o crea una cuenta con contraseña en "Regístrate aquí").';
     case 'auth/operation-not-allowed':
-      return 'El método de correo y contraseña debe habilitarse en Firebase Console (Authentication → Sign-in method).';
+      return 'Este método de acceso debe habilitarse en Firebase Console (Authentication → Sign-in method).';
+    case 'auth/unauthorized-domain':
+      return 'Este dominio aún no está autorizado en Firebase. Agrégalo en Firebase Console → Authentication → Settings → Authorized domains.';
+    case 'auth/account-exists-with-different-credential':
+      return 'Ya existe una cuenta registrada con este correo usando otro método de acceso.';
+    case 'auth/cancelled-popup-request':
+      return 'Ya hay otra ventana de acceso abierta. Ciérrala e intenta nuevamente.';
     case 'auth/popup-closed-by-user':
       return 'Se cerró la ventana de Google antes de completar el inicio de sesión.';
     case 'auth/popup-blocked':
@@ -80,7 +86,9 @@ const getFriendlyErrorMessage = (error: unknown): string => {
     case 'auth/network-request-failed':
       return 'Error de conexión. Verifica tu acceso a internet e intenta de nuevo.';
     default:
-      return 'Ocurrió un error inesperado. Por favor, intenta de nuevo.';
+      return code
+        ? `No se pudo iniciar sesión (${code}). Verifica tu configuración en Firebase Console.`
+        : 'Ocurrió un error inesperado. Por favor, intenta de nuevo.';
   }
 };
 

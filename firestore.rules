@@ -60,14 +60,14 @@ service cloud.firestore {
           'latitude', 'longitude',
           'eventDate', 'eventLocation', 'colorPalette', 'totalBudget',
           'musicPreferences', 'dancePreferences', 'themePreferences', 'mediaGallery',
-          'checklist', 'godparents', 'tables', 'budgetItems', 'courtOfHonor', 'timeline', 'playlist',
+          'checklist', 'godparents', 'tables', 'budgetItems', 'courtOfHonor', 'timeline', 'playlist', 'hiredVendors',
           'createdAt', 'updatedAt'
         ]) &&
         data.uid is string && data.uid == userId && isValidId(data.uid) &&
         data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
         data.email is string && data.email.size() >= 3 && data.email.size() <= 200 &&
         (!('phone' in data) || (data.phone is string && data.phone.size() <= 30)) &&
-        (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 1000)) &&
+        (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 2000)) &&
         data.userType in ['quinceanera', 'business'] &&
         (!('businessName' in data) || (data.businessName is string && data.businessName.size() <= 120)) &&
         (!('businessCategory' in data) || (data.businessCategory is string && data.businessCategory.size() <= 200)) &&
@@ -93,6 +93,7 @@ service cloud.firestore {
         (!('courtOfHonor' in data) || (data.courtOfHonor is list && data.courtOfHonor.size() <= 50)) &&
         (!('timeline' in data) || (data.timeline is list && data.timeline.size() <= 50)) &&
         (!('playlist' in data) || (data.playlist is list && data.playlist.size() <= 50)) &&
+        (!('hiredVendors' in data) || (data.hiredVendors is list && data.hiredVendors.size() <= 50)) &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
     }
@@ -134,7 +135,7 @@ service cloud.firestore {
         data.email is string && data.email.size() >= 5 && data.email.size() <= 200 &&
         data.website is string && data.website.size() >= 4 && data.website.size() <= 300 &&
         data.logoImageId is string && data.logoImageId.size() >= 1 && data.logoImageId.size() <= 100 &&
-        (!('coverImageUrl' in data) || (data.coverImageUrl is string && data.coverImageUrl.size() <= 1000)) &&
+        (!('coverImageUrl' in data) || (data.coverImageUrl is string && data.coverImageUrl.size() <= 2000)) &&
         isValidStringList(data.galleryImageIds, 0, 20) &&
         (!('galleryMedia' in data) || (data.galleryMedia is list && data.galleryMedia.size() <= 30)) &&
         data.isPublished is bool &&
@@ -215,7 +216,7 @@ service cloud.firestore {
               'latitude', 'longitude',
               'eventDate', 'eventLocation', 'colorPalette', 'totalBudget',
               'musicPreferences', 'dancePreferences', 'themePreferences', 'mediaGallery',
-              'checklist', 'godparents', 'tables', 'budgetItems', 'courtOfHonor', 'timeline', 'playlist',
+              'checklist', 'godparents', 'tables', 'budgetItems', 'courtOfHonor', 'timeline', 'playlist', 'hiredVendors',
               'updatedAt'
             ])
           )

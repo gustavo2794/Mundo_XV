@@ -27,6 +27,7 @@ import {
   ChecklistItem,
   CourtMember,
   GodparentItem,
+  HiredVendorItem,
   MediaAsset,
   QuoteRequest,
   QuoteRequestStatus,
@@ -45,6 +46,7 @@ import {
   MediaManager,
 } from '@/components/media-manager';
 import { GuestCsvImporter, exportGuestsToCsv } from '@/components/guest-csv-importer';
+import { generateSalonEventPdf } from '@/lib/pdf-export';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -91,6 +93,8 @@ import {
   MapPin,
   Video,
   Download,
+  Briefcase,
+  FileDown,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
@@ -231,6 +235,16 @@ export default function ProfilePage() {
   const [newGuestName, setNewGuestName] = useState('');
   const [selectedTableId, setSelectedTableId] = useState('');
 
+  const [hiredVendors, setHiredVendors] = useState<HiredVendorItem[]>([]);
+  const [newVendorCategory, setNewVendorCategory] = useState('Academia de Baile / Coreografía');
+  const [newVendorName, setNewVendorName] = useState('');
+  const [newVendorContact, setNewVendorContact] = useState('');
+  const [newVendorPhone, setNewVendorPhone] = useState('');
+  const [newVendorArrival, setNewVendorArrival] = useState('');
+  const [newVendorNotes, setNewVendorNotes] = useState('');
+
+  const [exportingPdf, setExportingPdf] = useState(false);
+
   const [quotes, setQuotes] = useState<QuoteRequest[]>([]);
   const [loadingQuotes, setLoadingQuotes] = useState(false);
 
@@ -271,6 +285,7 @@ export default function ProfilePage() {
       setPlaylist(profile.playlist && profile.playlist.length > 0 ? profile.playlist : DEFAULT_PLAYLIST);
       setGodparents(profile.godparents || []);
       setTables(profile.tables || []);
+      setHiredVendors(profile.hiredVendors || []);
     } else if (user) {
       setNameInput(user.displayName || '');
       setPhoneInput(user.phoneNumber || '');
@@ -279,6 +294,7 @@ export default function ProfilePage() {
       setCourtOfHonor(DEFAULT_COURT);
       setTimeline(DEFAULT_TIMELINE);
       setPlaylist(DEFAULT_PLAYLIST);
+      setHiredVendors([]);
     }
   }, [profile, user]);
 
@@ -531,17 +547,21 @@ export default function ProfilePage() {
   // Quinceañera Media Gallery change handler
   const handleQuinceaneraMediaChange = async (updated: MediaAsset[]) => {
     if (!user) return;
+    if (!user.emailVerified) {
+      throw new Error('Verifica tu correo electrónico antes de guardar fotos o videos en tu galería.');
+    }
+    const previous = mediaGallery;
     setMediaGallery(updated);
     try {
       await updateUserProfile(user.uid, { mediaGallery: updated });
-      await refreshProfile();
     } catch (error) {
       console.error('Error al guardar galería de quinceañera:', error);
-      toast({
-        variant: 'destructive',
-        title: 'Error al guardar galería',
-        description: 'No se pudo actualizar tu galería en la base de datos.',
-      });
+      setMediaGallery(previous);
+      throw new Error(
+        error instanceof Error
+          ? error.message
+          : 'No se pudo actualizar tu galería en la base de datos.'
+      );
     }
   };
 
@@ -551,13 +571,34 @@ export default function ProfilePage() {
     galleryMedia?: MediaAsset[];
   }) => {
     if (!user) return;
+    if (!user.emailVerified) {
+      throw new Error('Verifica tu correo electrónico para publicar o actualizar tu empresa.');
+    }
+
     const coverToSave = overrides?.coverImageUrl ?? businessCoverUrl;
     const galleryToSave = overrides?.galleryMedia ?? businessGalleryMedia;
-    const locStr = businessLocationInput.trim() || 'Ciudad de México';
+    const rawLoc = businessLocationInput.trim();
+    const locStr = rawLoc.length >= 3 ? rawLoc : 'Ciudad de México';
     const inferred =
       businessLat !== undefined && businessLng !== undefined
         ? { lat: businessLat, lng: businessLng }
         : inferCoordsFromLocation(locStr);
+
+    const rawName = businessNameInput.trim() || profile?.displayName || user.displayName || 'Mi Empresa XV';
+    const safeName = rawName.length >= 3 ? rawName : `${rawName} XV`.padEnd(3, ' ');
+    const rawDesc = businessDescInput.trim();
+    const safeShortDesc =
+      rawDesc.length >= 10
+        ? rawDesc.slice(0, 400)
+        : 'Servicios profesionales y coreografías para tu Quinceañera.';
+    const safeLongDesc =
+      rawDesc.length >= 20
+        ? rawDesc
+        : 'Ofrecemos lo mejor para hacer de tu fiesta de XV años un evento inolvidable y espectacular.';
+    const rawPhone = businessPhoneInput.trim();
+    const safePhone = rawPhone.length >= 7 ? rawPhone : '5500000000';
+    const rawWebsite = businessWebsiteInput.trim();
+    const safeWebsite = rawWebsite.length >= 4 ? rawWebsite : 'www.mundo15.com';
 
     await updateUserProfile(user.uid, {
       businessName: businessNameInput.trim(),
@@ -575,15 +616,15 @@ export default function ProfilePage() {
         ? businessCategoryInput.split(',').map((s) => s.trim()).filter(Boolean)
         : myAcademy.danceStyles;
       await updateAcademy(myAcademy.id, {
-        name: businessNameInput.trim() || myAcademy.name,
-        description: businessDescInput.trim().slice(0, 400) || myAcademy.description,
-        longDescription: businessDescInput.trim() || myAcademy.longDescription,
+        name: safeName,
+        description: safeShortDesc,
+        longDescription: safeLongDesc,
         cost: businessCostInput,
         location: locStr,
         ...(inferred ? { latitude: inferred.lat, longitude: inferred.lng } : {}),
-        danceStyles: styles,
-        phone: businessPhoneInput.trim() || myAcademy.contact.phone,
-        website: businessWebsiteInput.trim() || myAcademy.contact.website,
+        danceStyles: styles.length > 0 ? styles : ['Vals'],
+        phone: safePhone,
+        website: safeWebsite,
         coverImageUrl: coverToSave,
         galleryMedia: galleryToSave,
       });
@@ -599,28 +640,22 @@ export default function ProfilePage() {
           : prev
       );
     } else {
-      const fallbackBizName =
-        businessNameInput.trim() || profile?.displayName || user.displayName || 'Mi Empresa XV';
       const styles = businessCategoryInput
         ? businessCategoryInput.split(',').map((s) => s.trim()).filter(Boolean)
         : ['Vals'];
       await createAcademy(
         {
-          name: fallbackBizName,
-          description:
-            businessDescInput.trim().slice(0, 400) ||
-            'Servicios profesionales para tu Quinceañera.',
-          longDescription:
-            businessDescInput.trim() ||
-            'Ofrecemos lo mejor para hacer de tu fiesta un evento inolvidable.',
+          name: safeName,
+          description: safeShortDesc,
+          longDescription: safeLongDesc,
           cost: businessCostInput,
           location: locStr,
           ...(inferred ? { latitude: inferred.lat, longitude: inferred.lng } : {}),
           popularity: 'Nueva',
-          danceStyles: styles,
-          phone: businessPhoneInput.trim() || '5500000000',
-          email: user.email || '',
-          website: businessWebsiteInput.trim() || 'www.mundo15.com',
+          danceStyles: styles.length > 0 ? styles : ['Vals'],
+          phone: safePhone,
+          email: user.email || 'contacto@mundo15.com',
+          website: safeWebsite,
           logoImageId: 'academy-logo-1',
           coverImageUrl: coverToSave || undefined,
           galleryImageIds: ['gallery-1-1', 'gallery-1-2', 'gallery-1-3'],
@@ -647,29 +682,68 @@ export default function ProfilePage() {
       });
     } catch (error) {
       console.error('Error al guardar perfil de empresa:', error);
-      toast({ variant: 'destructive', title: 'Error', description: 'No se pudo guardar la información de la empresa.' });
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description:
+          error instanceof Error
+            ? error.message
+            : 'No se pudo guardar la información de la empresa.',
+      });
     } finally {
       setSavingBusiness(false);
     }
   };
 
   const handleBusinessCoverChange = async (newUrl: string) => {
+    if (!user) return;
+    if (!user.emailVerified) {
+      throw new Error('Verifica tu correo electrónico para actualizar la portada de tu empresa.');
+    }
+    const previous = businessCoverUrl;
     setBusinessCoverUrl(newUrl);
     try {
-      await syncBusinessAcademyRecord({ coverImageUrl: newUrl });
+      if (myAcademy) {
+        await updateAcademy(myAcademy.id, { coverImageUrl: newUrl });
+        setMyAcademy((prev) =>
+          prev ? { ...prev, coverImageUrl: newUrl || undefined } : prev
+        );
+      } else {
+        await syncBusinessAcademyRecord({ coverImageUrl: newUrl });
+      }
     } catch (error) {
       console.error('Error al actualizar portada de empresa:', error);
-      toast({ variant: 'destructive', title: 'Error al guardar portada' });
+      setBusinessCoverUrl(previous);
+      throw new Error(
+        error instanceof Error
+          ? error.message
+          : 'No se pudo guardar la portada en la base de datos.'
+      );
     }
   };
 
   const handleBusinessGalleryChange = async (updated: MediaAsset[]) => {
+    if (!user) return;
+    if (!user.emailVerified) {
+      throw new Error('Verifica tu correo electrónico para actualizar la galería de tu empresa.');
+    }
+    const previous = businessGalleryMedia;
     setBusinessGalleryMedia(updated);
     try {
-      await syncBusinessAcademyRecord({ galleryMedia: updated });
+      if (myAcademy) {
+        await updateAcademy(myAcademy.id, { galleryMedia: updated });
+        setMyAcademy((prev) => (prev ? { ...prev, galleryMedia: updated } : prev));
+      } else {
+        await syncBusinessAcademyRecord({ galleryMedia: updated });
+      }
     } catch (error) {
       console.error('Error al guardar galería de empresa:', error);
-      toast({ variant: 'destructive', title: 'Error al guardar galería' });
+      setBusinessGalleryMedia(previous);
+      throw new Error(
+        error instanceof Error
+          ? error.message
+          : 'No se pudo guardar la galería en la base de datos.'
+      );
     }
   };
 
@@ -983,6 +1057,122 @@ export default function ProfilePage() {
     await updateUserProfile(user.uid, { tables: updatedTables });
   };
 
+  // Hired Vendors handlers (Academia contratada, Conjunto Musical, DJ, Salón, etc.)
+  const handleAddHiredVendor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !newVendorName.trim()) return;
+    const newItem: HiredVendorItem = {
+      id: Date.now().toString(),
+      category: newVendorCategory,
+      name: newVendorName.trim(),
+      contactName: newVendorContact.trim() || undefined,
+      phone: newVendorPhone.trim() || undefined,
+      arrivalTime: newVendorArrival.trim() || undefined,
+      notes: newVendorNotes.trim() || undefined,
+    };
+    const previous = hiredVendors;
+    const updated = [...hiredVendors, newItem];
+    setHiredVendors(updated);
+    setNewVendorName('');
+    setNewVendorContact('');
+    setNewVendorPhone('');
+    setNewVendorArrival('');
+    setNewVendorNotes('');
+    try {
+      await updateUserProfile(user.uid, { hiredVendors: updated });
+      toast({ title: 'Proveedor contratado guardado' });
+    } catch (error) {
+      console.error('Error al guardar proveedor:', error);
+      setHiredVendors(previous);
+      toast({
+        variant: 'destructive',
+        title: 'No se pudo guardar el proveedor',
+        description: 'Verifica que tu correo esté verificado e intenta de nuevo.',
+      });
+    }
+  };
+
+  const handleImportQuoteAsVendor = async (quote: QuoteRequest) => {
+    if (!user) return;
+    const alreadyExists = hiredVendors.some(
+      (v) => v.name.toLowerCase() === quote.academyName.toLowerCase()
+    );
+    if (alreadyExists) {
+      toast({ title: `"${quote.academyName}" ya está en tu lista de contratados` });
+      return;
+    }
+    const newItem: HiredVendorItem = {
+      id: Date.now().toString(),
+      category: 'Academia de Baile / Coreografía',
+      name: quote.academyName,
+      notes: quote.message ? `Cotización: ${quote.message.slice(0, 120)}` : undefined,
+    };
+    const updated = [...hiredVendors, newItem];
+    setHiredVendors(updated);
+    try {
+      await updateUserProfile(user.uid, { hiredVendors: updated });
+      toast({ title: `"${quote.academyName}" agregado a proveedores contratados` });
+    } catch (error) {
+      console.error('Error al importar proveedor:', error);
+    }
+  };
+
+  const handleDeleteHiredVendor = async (id: string) => {
+    if (!user) return;
+    const previous = hiredVendors;
+    const updated = hiredVendors.filter((v) => v.id !== id);
+    setHiredVendors(updated);
+    try {
+      await updateUserProfile(user.uid, { hiredVendors: updated });
+      toast({ title: 'Proveedor eliminado' });
+    } catch (error) {
+      console.error('Error al eliminar proveedor:', error);
+      setHiredVendors(previous);
+    }
+  };
+
+  // Export complete Salon PDF Dossier
+  const handleExportSalonPdf = () => {
+    if (!user) return;
+    setExportingPdf(true);
+    try {
+      const fileName = generateSalonEventPdf({
+        quinceaneraName:
+          nameInput.trim() || profile?.displayName || user.displayName || 'Quinceanera',
+        email: user.email || undefined,
+        phone: phoneInput.trim() || profile?.phone || undefined,
+        eventDate: eventDateInput.trim() || undefined,
+        eventLocation: eventLocationInput.trim() || undefined,
+        theme: selectedTheme || undefined,
+        colorPalette: selectedPalette || undefined,
+        musicPreferences: musicPrefs,
+        dancePreferences: dancePrefs,
+        hiredVendors,
+        quotes,
+        tables,
+        godparents,
+        courtOfHonor,
+        timeline,
+        playlist,
+        checklist,
+        budgetItems,
+      });
+      toast({
+        title: 'Expediente PDF descargado',
+        description: `Se descargó "${fileName}" con todos tus datos listos para entregar al salón.`,
+      });
+    } catch (error) {
+      console.error('Error al generar PDF:', error);
+      toast({
+        variant: 'destructive',
+        title: 'No se pudo generar el PDF',
+        description: 'Intenta nuevamente en unos segundos.',
+      });
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
@@ -1132,15 +1322,31 @@ export default function ProfilePage() {
                   )}
                 </div>
 
-                <div className="rounded-xl border bg-card p-4 flex flex-col justify-between">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground font-medium">Progreso de Planeación</span>
-                    <span className="text-xs font-bold text-primary tabular-nums">{stats.taskPercent}%</span>
+                <div className="rounded-xl border bg-card p-4 flex flex-col justify-between gap-2.5">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground font-medium">Progreso de Planeación</span>
+                      <span className="text-xs font-bold text-primary tabular-nums">{stats.taskPercent}%</span>
+                    </div>
+                    <Progress value={stats.taskPercent} className="h-2 my-2" />
+                    <p className="text-[11px] text-muted-foreground tabular-nums">
+                      {stats.completedTasks} de {stats.totalTasks} pendientes · {stats.totalGuests} invitados.
+                    </p>
                   </div>
-                  <Progress value={stats.taskPercent} className="h-2 my-2" />
-                  <p className="text-[11px] text-muted-foreground tabular-nums">
-                    {stats.completedTasks} de {stats.totalTasks} pendientes listos.
-                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleExportSalonPdf}
+                    disabled={exportingPdf}
+                    className="w-full gap-1.5 min-h-[38px] text-xs shadow-sm"
+                  >
+                    {exportingPdf ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <FileDown className="h-3.5 w-3.5" />
+                    )}
+                    Descargar PDF para el Salón
+                  </Button>
                 </div>
               </div>
             )}
@@ -1155,6 +1361,10 @@ export default function ProfilePage() {
                 <TabsTrigger value="checklist" className="gap-2 text-xs md:text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                   <ListTodo className="h-4 w-4" />
                   Check-list ({stats.completedTasks}/{stats.totalTasks})
+                </TabsTrigger>
+                <TabsTrigger value="vendors" className="gap-2 text-xs md:text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <Briefcase className="h-4 w-4" />
+                  Proveedores ({hiredVendors.length})
                 </TabsTrigger>
                 <TabsTrigger value="budget" className="gap-2 text-xs md:text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                   <DollarSign className="h-4 w-4" />
@@ -1290,6 +1500,180 @@ export default function ProfilePage() {
                       </div>
                     ))}
                   </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* TAB 1B: PROVEEDORES CONTRATADOS PARA EL SALÓN */}
+            <TabsContent value="vendors" className="space-y-6">
+              <Card className="shadow-md">
+                <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <CardTitle className="font-headline text-2xl flex items-center gap-2">
+                      <Briefcase className="h-6 w-6 text-primary" />
+                      Proveedores y Servicios Contratados
+                    </CardTitle>
+                    <CardDescription className="mt-1">
+                      Registra aquí la academia de baile contratada, conjunto musical o banda, DJ, banquete, foto/video y horarios de llegada para entregarlo completo al salón en PDF.
+                    </CardDescription>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    onClick={handleExportSalonPdf}
+                    disabled={exportingPdf}
+                    className="gap-1.5 min-h-[40px] shrink-0"
+                  >
+                    {exportingPdf ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <FileDown className="h-4 w-4" />
+                    )}
+                    Exportar PDF del Evento
+                  </Button>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {quotes.length > 0 && (
+                    <div className="rounded-xl border border-primary/20 bg-primary/5 p-3.5 space-y-2">
+                      <p className="text-xs font-semibold text-foreground">
+                        ¿Contrataste alguna de las academias que cotizaste? Agrégala con un clic:
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {quotes.map((q) => (
+                          <Button
+                            key={q.id}
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleImportQuoteAsVendor(q)}
+                            className="h-8 text-xs gap-1 bg-background"
+                          >
+                            <Plus className="h-3 w-3 text-primary" />
+                            {q.academyName}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <form
+                    onSubmit={handleAddHiredVendor}
+                    className="grid grid-cols-1 sm:grid-cols-6 gap-3 bg-muted/20 p-4 rounded-xl border"
+                  >
+                    <div className="sm:col-span-2">
+                      <Label className="text-xs mb-1 block">Tipo de Servicio / Categoría</Label>
+                      <Select value={newVendorCategory} onValueChange={setNewVendorCategory}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Academia de Baile / Coreografía">Academia de Baile / Coreografía</SelectItem>
+                          <SelectItem value="Conjunto Musical / Banda / Mariachi">Conjunto Musical / Banda / Mariachi</SelectItem>
+                          <SelectItem value="DJ / Sonido e Iluminación">DJ / Sonido e Iluminación</SelectItem>
+                          <SelectItem value="Salón de Fiestas / Coordinador">Salón de Fiestas / Coordinador</SelectItem>
+                          <SelectItem value="Banquete y Pastel">Banquete y Pastel</SelectItem>
+                          <SelectItem value="Fotografía y Video">Fotografía y Video</SelectItem>
+                          <SelectItem value="Decoración y Flores">Decoración y Flores</SelectItem>
+                          <SelectItem value="Vestido y Accesorios">Vestido y Accesorios</SelectItem>
+                          <SelectItem value="Otro Proveedor">Otro Proveedor</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <Label className="text-xs mb-1 block">Nombre de la Academia / Grupo / Empresa *</Label>
+                      <Input
+                        placeholder="Ej: Ritmo Latino, Banda La Reina, DJ Alex..."
+                        value={newVendorName}
+                        onChange={(e) => setNewVendorName(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs mb-1 block">Encargado (Opcional)</Label>
+                      <Input
+                        placeholder="Ej: Prof. Carlos"
+                        value={newVendorContact}
+                        onChange={(e) => setNewVendorContact(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs mb-1 block">Teléfono (Opcional)</Label>
+                      <Input
+                        placeholder="5512345678"
+                        value={newVendorPhone}
+                        onChange={(e) => setNewVendorPhone(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs mb-1 block">Hora de Llegada</Label>
+                      <Input
+                        type="time"
+                        value={newVendorArrival}
+                        onChange={(e) => setNewVendorArrival(e.target.value)}
+                      />
+                    </div>
+                    <div className="sm:col-span-4">
+                      <Label className="text-xs mb-1 block">Notas operativas para el salón (Opcional)</Label>
+                      <Input
+                        placeholder="Ej: Requiere toma de corriente 220V, 2 micrófonos inalámbricos, montaje en pista..."
+                        value={newVendorNotes}
+                        onChange={(e) => setNewVendorNotes(e.target.value)}
+                      />
+                    </div>
+                    <div className="flex items-end">
+                      <Button type="submit" className="w-full gap-1">
+                        <Plus className="h-4 w-4" /> Guardar
+                      </Button>
+                    </div>
+                  </form>
+
+                  {hiredVendors.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground text-sm">
+                      Aún no has agregado tus proveedores contratados. Registra aquí tu academia de baile, conjunto musical, DJ, fotografía o banquete para incluirlos en el PDF del salón.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {hiredVendors.map((vendor) => (
+                        <div
+                          key={vendor.id}
+                          className="rounded-xl border p-4 bg-card flex items-start justify-between gap-3 shadow-sm"
+                        >
+                          <div className="space-y-1 min-w-0">
+                            <Badge variant="secondary" className="text-[11px]">
+                              {vendor.category}
+                            </Badge>
+                            <h4 className="font-headline font-bold text-base text-foreground pt-0.5">
+                              {vendor.name}
+                            </h4>
+                            {(vendor.contactName || vendor.phone) && (
+                              <p className="text-xs text-muted-foreground">
+                                {[vendor.contactName, vendor.phone ? `Tel: ${vendor.phone}` : null]
+                                  .filter(Boolean)
+                                  .join(' · ')}
+                              </p>
+                            )}
+                            {vendor.arrivalTime && (
+                              <p className="text-xs text-primary font-medium tabular-nums">
+                                Llegada / montaje en salón: {vendor.arrivalTime}
+                              </p>
+                            )}
+                            {vendor.notes && (
+                              <p className="text-xs text-muted-foreground italic">{vendor.notes}</p>
+                            )}
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                            onClick={() => handleDeleteHiredVendor(vendor.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
@@ -1836,6 +2220,21 @@ export default function ProfilePage() {
                     </CardDescription>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <Button
+                      type="button"
+                      variant="default"
+                      size="sm"
+                      onClick={handleExportSalonPdf}
+                      disabled={exportingPdf}
+                      className="gap-1.5 min-h-[40px] whitespace-nowrap shrink-0"
+                    >
+                      {exportingPdf ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <FileDown className="h-4 w-4" />
+                      )}
+                      Exportar PDF para el Salón
+                    </Button>
                     <GuestCsvImporter
                       tables={tables}
                       onImportTables={handleBulkImportTables}

@@ -23,6 +23,7 @@ import type {
   ChecklistItem,
   CourtMember,
   GodparentItem,
+  HiredVendorItem,
   MediaAsset,
   QuoteRequest,
   QuoteRequestStatus,
@@ -216,6 +217,7 @@ export async function syncUserProfile(
       courtOfHonor: DEFAULT_COURT,
       timeline: DEFAULT_TIMELINE,
       playlist: DEFAULT_PLAYLIST,
+      hiredVendors: [],
       totalBudget: 104500,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -244,7 +246,7 @@ export async function syncUserProfile(
       payload.phone = clampString(phoneValue, 30);
     }
     if (user.photoURL?.trim()) {
-      payload.photoURL = clampString(user.photoURL, 500);
+      payload.photoURL = clampString(user.photoURL, 2000);
     }
 
     await setDoc(ref, payload);
@@ -332,6 +334,7 @@ export async function updateUserProfile(
     courtOfHonor?: CourtMember[];
     timeline?: TimelineItem[];
     playlist?: SongItem[];
+    hiredVendors?: HiredVendorItem[];
   }
 ): Promise<void> {
   const path = `users/${uid}`;
@@ -344,7 +347,7 @@ export async function updateUserProfile(
       if (cleanName.length >= 1) payload.displayName = cleanName;
     }
     if (updates.phone !== undefined) payload.phone = clampString(updates.phone, 30);
-    if (updates.photoURL !== undefined) payload.photoURL = clampString(updates.photoURL, 1000);
+    if (updates.photoURL !== undefined) payload.photoURL = clampString(updates.photoURL, 2000);
     if (updates.userType !== undefined) payload.userType = updates.userType;
     if (updates.businessName !== undefined) {
       payload.businessName = clampString(updates.businessName, 120);
@@ -402,6 +405,7 @@ export async function updateUserProfile(
     if (updates.courtOfHonor !== undefined) payload.courtOfHonor = updates.courtOfHonor;
     if (updates.timeline !== undefined) payload.timeline = updates.timeline;
     if (updates.playlist !== undefined) payload.playlist = updates.playlist;
+    if (updates.hiredVendors !== undefined) payload.hiredVendors = updates.hiredVendors.slice(0, 50);
 
     await updateDoc(doc(db, 'users', uid), payload as any);
   } catch (error) {
@@ -585,7 +589,7 @@ export async function createAcademy(
       payload.longitude = resolvedCreateCoords.lng;
     }
     if (input.coverImageUrl?.trim()) {
-      payload.coverImageUrl = clampString(input.coverImageUrl, 1000);
+      payload.coverImageUrl = clampString(input.coverImageUrl, 2000);
     }
     if (input.galleryMedia && input.galleryMedia.length > 0) {
       payload.galleryMedia = input.galleryMedia.slice(0, 30);
@@ -640,7 +644,7 @@ export async function updateAcademy(
     if (input.website !== undefined) payload.website = clampString(input.website, 300);
     if (input.logoImageId !== undefined) payload.logoImageId = clampString(input.logoImageId, 100);
     if (input.coverImageUrl !== undefined) {
-      payload.coverImageUrl = clampString(input.coverImageUrl, 1000);
+      payload.coverImageUrl = clampString(input.coverImageUrl, 2000);
     }
     if (input.galleryImageIds !== undefined) {
       payload.galleryImageIds = clampStringList(input.galleryImageIds, 20);

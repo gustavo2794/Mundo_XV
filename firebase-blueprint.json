@@ -33,7 +33,7 @@
         "photoURL": {
           "type": "string",
           "description": "Optional avatar URL.",
-          "maxLength": 1000
+          "maxLength": 2000
         },
         "userType": {
           "type": "string",
@@ -144,6 +144,10 @@
         "playlist": {
           "type": "array",
           "description": "Music playlist for special moments."
+        },
+        "hiredVendors": {
+          "type": "array",
+          "description": "Contracted vendors and services for the venue dossier (dance academy, live band, DJ, catering, etc.)."
         },
         "createdAt": {
           "type": "string",
@@ -281,8 +285,8 @@
         },
         "coverImageUrl": {
           "type": "string",
-          "description": "Custom uploaded cover image URL from Firebase Storage.",
-          "maxLength": 1000
+          "description": "Custom uploaded cover image URL from Cloudinary or direct web URL.",
+          "maxLength": 2000
         },
         "galleryImageIds": {
           "type": "array",

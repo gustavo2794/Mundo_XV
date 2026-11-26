@@ -107,6 +107,7 @@ export function CloudinaryConfigModal({
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     saveStoredCloudinarySettings({
       cloudName: cloudName.trim(),
       uploadPreset: uploadPreset.trim(),
@@ -284,13 +285,33 @@ export function AvatarUploader({
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
 
+  const normalizeMediaUrl = (raw: string): string => {
+    let candidate = raw.trim();
+    if (!candidate) {
+      throw new Error('Pega un enlace válido antes de guardar.');
+    }
+    if (!/^https?:\/\//i.test(candidate)) {
+      candidate = `https://${candidate}`;
+    }
+    try {
+      const parsed = new URL(candidate);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new Error('El enlace debe comenzar con https:// o http://');
+      }
+      return parsed.toString();
+    } catch {
+      throw new Error('El enlace no tiene un formato de URL válido (ej: https://res.cloudinary.com/...).');
+    }
+  };
+
   const handleApplyUrl = async (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     if (!urlInput.trim()) return;
 
     setUploading(true);
     try {
-      const cleanUrl = urlInput.trim();
+      const cleanUrl = normalizeMediaUrl(urlInput);
       if (auth.currentUser) {
         await updateProfile(auth.currentUser, { photoURL: cleanUrl });
       }
@@ -593,8 +614,32 @@ export function CoverImageUploader({
   const [urlDialogOpen, setUrlDialogOpen] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const [configOpen, setConfigOpen] = useState(false);
+  const [imgError, setImgError] = useState(false);
 
   const previewUrl = currentUrl || fallbackUrl;
+
+  useEffect(() => {
+    setImgError(false);
+  }, [previewUrl]);
+
+  const normalizeCoverUrl = (raw: string): string => {
+    let candidate = raw.trim();
+    if (!candidate) {
+      throw new Error('Pega el enlace de tu foto de portada.');
+    }
+    if (!/^https?:\/\//i.test(candidate)) {
+      candidate = `https://${candidate}`;
+    }
+    try {
+      const parsed = new URL(candidate);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new Error('El enlace debe comenzar con https:// o http://');
+      }
+      return parsed.toString();
+    } catch {
+      throw new Error('La URL ingresada no es válida. Asegúrate de copiar el enlace completo.');
+    }
+  };
 
   const handleSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -616,7 +661,7 @@ export function CoverImageUploader({
       toast({
         title: 'Conecta Cloudinary o pega una URL',
         description:
-          'Para subir archivos directamente desde tu equipo, conecta tu Cloud Name o usa el botón "Pegar Enlace (URL)".',
+          'Para subir archivos directamente desde tu equipo, conecta tu Cloud Name o usa el botón "Pegar URL".',
       });
       return;
     }
@@ -633,13 +678,13 @@ export function CoverImageUploader({
       await onUploaded(asset.url);
       toast({
         title: 'Portada actualizada',
-        description: 'La imagen principal de tu negocio fue actualizada con éxito.',
+        description: 'La imagen principal fue guardada correctamente.',
       });
     } catch (error) {
       console.error('Error al subir imagen de portada:', error);
       toast({
         variant: 'destructive',
-        title: 'Error al subir portada',
+        title: 'Error al guardar portada',
         description: error instanceof Error ? error.message : 'Intenta nuevamente.',
       });
     } finally {
@@ -650,13 +695,15 @@ export function CoverImageUploader({
 
   const handleApplyUrl = async (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     if (!urlInput.trim()) return;
     setUploading(true);
     try {
-      await onUploaded(urlInput.trim());
+      const cleanUrl = normalizeCoverUrl(urlInput);
+      await onUploaded(cleanUrl);
       toast({
         title: 'Portada actualizada',
-        description: 'El enlace de portada fue aplicado exitosamente.',
+        description: 'El enlace de portada se guardó correctamente.',
       });
       setUrlInput('');
       setUrlDialogOpen(false);
@@ -665,7 +712,28 @@ export function CoverImageUploader({
       toast({
         variant: 'destructive',
         title: 'Error al actualizar portada',
-        description: 'No se pudo guardar la imagen.',
+        description:
+          error instanceof Error ? error.message : 'No se pudo guardar la imagen de portada.',
+      });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleRemoveCover = async () => {
+    setUploading(true);
+    try {
+      await onUploaded('');
+      toast({
+        title: 'Portada restablecida',
+        description: 'Se quitó la imagen personalizada de portada.',
+      });
+    } catch (error) {
+      console.error('Error al quitar portada:', error);
+      toast({
+        variant: 'destructive',
+        title: 'No se pudo quitar la portada',
+        description: error instanceof Error ? error.message : 'Intenta nuevamente.',
       });
     } finally {
       setUploading(false);
@@ -722,7 +790,7 @@ export function CoverImageUploader({
               variant="ghost"
               size="sm"
               disabled={uploading}
-              onClick={() => onUploaded('')}
+              onClick={handleRemoveCover}
               className="text-destructive hover:text-destructive gap-1 text-xs"
             >
               <X className="h-4 w-4" />
@@ -733,18 +801,23 @@ export function CoverImageUploader({
       </div>
 
       <div className="relative aspect-video max-h-72 w-full overflow-hidden rounded-2xl border bg-muted/40 shadow-inner group">
-        {previewUrl ? (
+        {previewUrl && !imgError ? (
           <Image
             src={previewUrl}
             alt="Portada de la empresa"
             fill
             referrerPolicy="no-referrer"
+            onError={() => setImgError(true)}
             className="object-cover transition-transform duration-500 group-hover:scale-105"
           />
         ) : (
           <div className="flex h-full w-full flex-col items-center justify-center text-muted-foreground p-6 text-center">
             <ImageIcon className="h-12 w-12 mb-2 opacity-50 text-primary" />
-            <span className="text-xs font-medium">Sin imagen de portada personalizada</span>
+            <span className="text-xs font-medium">
+              {imgError
+                ? 'No pudimos cargar la vista previa de esa URL. Verifica que sea un enlace directo de imagen (.jpg, .png, res.cloudinary.com).'
+                : 'Sin imagen de portada personalizada'}
+            </span>
             <span className="text-[11px] text-muted-foreground mt-1">
               Haz clic en &quot;Subir Archivo&quot; o &quot;Pegar URL&quot; para publicar una foto de tu salón o coreografía.
             </span>
@@ -859,6 +932,7 @@ export function MediaManager({
   const [directUrl, setDirectUrl] = useState('');
   const [directTitle, setDirectTitle] = useState('');
   const [directType, setDirectType] = useState<'image' | 'video'>('image');
+  const [savingUrl, setSavingUrl] = useState(false);
 
   useEffect(() => {
     setCloudinaryActive(isCloudinaryConfigured());
@@ -933,11 +1007,23 @@ export function MediaManager({
 
     if (uploadedCount > 0) {
       setCaptionInput('');
-      await onChange(currentItems);
-      toast({
-        title: uploadedCount === 1 ? 'Archivo subido' : `${uploadedCount} archivos subidos`,
-        description: 'La galería fue actualizada y guardada correctamente.',
-      });
+      try {
+        await onChange(currentItems);
+        toast({
+          title: uploadedCount === 1 ? 'Archivo subido' : `${uploadedCount} archivos subidos`,
+          description: 'La galería fue actualizada y guardada correctamente.',
+        });
+      } catch (error) {
+        console.error('Error al guardar archivos en galería:', error);
+        toast({
+          variant: 'destructive',
+          title: 'Error al guardar en la base de datos',
+          description:
+            error instanceof Error
+              ? error.message
+              : 'Los archivos se subieron, pero no se pudieron guardar en tu galería.',
+        });
+      }
     }
   };
 
@@ -958,6 +1044,7 @@ export function MediaManager({
 
   const handleAddDirectUrl = async (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     if (!directUrl.trim()) return;
 
     if (items.length >= maxItems) {
@@ -969,23 +1056,58 @@ export function MediaManager({
       return;
     }
 
-    const newAsset = createMediaAssetFromUrl(
-      directUrl.trim(),
-      directType,
-      directTitle.trim() || undefined
-    );
+    let candidateUrl = directUrl.trim();
+    if (!/^https?:\/\//i.test(candidateUrl)) {
+      candidateUrl = `https://${candidateUrl}`;
+    }
 
-    const updated = [newAsset, ...items];
-    await onChange(updated);
+    try {
+      const parsed = new URL(candidateUrl);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new Error('URL inválida');
+      }
+      candidateUrl = parsed.toString();
+    } catch {
+      toast({
+        variant: 'destructive',
+        title: 'Enlace no válido',
+        description: 'Pega una URL completa válida (ej: https://res.cloudinary.com/...).',
+      });
+      return;
+    }
 
-    toast({
-      title: 'Elemento agregado',
-      description: 'La foto o video fue añadida a tu galería.',
-    });
+    setSavingUrl(true);
+    try {
+      const newAsset = createMediaAssetFromUrl(
+        candidateUrl,
+        directType,
+        directTitle.trim() || undefined
+      );
 
-    setDirectUrl('');
-    setDirectTitle('');
-    setUrlModalOpen(false);
+      const updated = [newAsset, ...items];
+      await onChange(updated);
+
+      toast({
+        title: 'Elemento agregado',
+        description: 'La foto o video fue guardada en tu galería.',
+      });
+
+      setDirectUrl('');
+      setDirectTitle('');
+      setUrlModalOpen(false);
+    } catch (error) {
+      console.error('Error al agregar URL a galería:', error);
+      toast({
+        variant: 'destructive',
+        title: 'No se pudo guardar en la galería',
+        description:
+          error instanceof Error
+            ? error.message
+            : 'Verifica tu sesión o intenta nuevamente.',
+      });
+    } finally {
+      setSavingUrl(false);
+    }
   };
 
   const handleDeleteItem = async (item: MediaAsset) => {
@@ -1385,12 +1507,13 @@ export function MediaManager({
                 type="button"
                 variant="outline"
                 size="sm"
+                disabled={savingUrl}
                 onClick={() => setUrlModalOpen(false)}
               >
                 Cancelar
               </Button>
-              <Button type="submit" size="sm" disabled={!directUrl.trim()} className="gap-1.5">
-                <Sparkles className="h-3.5 w-3.5" />
+              <Button type="submit" size="sm" disabled={savingUrl || !directUrl.trim()} className="gap-1.5">
+                {savingUrl ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
                 Agregar a Galería
               </Button>
             </div>

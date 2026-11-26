@@ -165,6 +165,32 @@ export default function EditAcademyPage() {
     );
   }
 
+  const handleCoverUploaded = async (newUrl: string) => {
+    const previous = coverImageUrl;
+    setCoverImageUrl(newUrl);
+    if (existsInFirestore) {
+      try {
+        await updateAcademy(academyId, { coverImageUrl: newUrl });
+      } catch (error) {
+        setCoverImageUrl(previous);
+        throw error;
+      }
+    }
+  };
+
+  const handleGalleryChanged = async (updated: MediaAsset[]) => {
+    const previous = galleryMedia;
+    setGalleryMedia(updated);
+    if (existsInFirestore) {
+      try {
+        await updateAcademy(academyId, { galleryMedia: updated });
+      } catch (error) {
+        setGalleryMedia(previous);
+        throw error;
+      }
+    }
+  };
+
   async function onSubmit(values: AcademyFormValues) {
     if (!user || !academyToEdit) return;
     setIsSaving(true);
@@ -463,31 +489,6 @@ export default function EditAcademyPage() {
                   />
                 </div>
 
-                <div className="space-y-6 rounded-md border p-4">
-                  <h3 className="font-medium">Portada y Galería Multimedia (Fotos y Videos)</h3>
-                  <CoverImageUploader
-                    currentUrl={coverImageUrl}
-                    fallbackUrl={
-                      PlaceHolderImages.find(
-                        (p) => p.id === (form.watch('logoImageId') || 'academy-logo-1')
-                      )?.imageUrl
-                    }
-                    folderPath={`academies/${academyId}/cover`}
-                    onUploaded={(url) => setCoverImageUrl(url)}
-                  />
-                  <div className="border-t pt-4">
-                    <MediaManager
-                      items={galleryMedia}
-                      folderPath={`academies/${academyId}/gallery`}
-                      maxItems={30}
-                      allowVideos={true}
-                      onChange={(updated) => setGalleryMedia(updated)}
-                      emptyTitle="Sin archivos multimedia personalizados"
-                      emptyDescription="Sube fotos y videos de muestra para esta academia y haz clic en Guardar Cambios."
-                    />
-                  </div>
-                </div>
-
                 <div className="flex gap-4">
                   <Button
                     type="button"
@@ -508,6 +509,38 @@ export default function EditAcademyPage() {
                 </div>
               </form>
             </Form>
+
+            <div className="mt-8 space-y-6 rounded-md border p-4">
+              <div>
+                <h3 className="font-medium">Portada y Galería Multimedia (Fotos y Videos)</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {existsInFirestore
+                    ? 'Los cambios en la portada y la galería se guardan automáticamente en la nube.'
+                    : 'Sube o pega tus enlaces y luego haz clic en Guardar Cambios para crear la academia.'}
+                </p>
+              </div>
+              <CoverImageUploader
+                currentUrl={coverImageUrl}
+                fallbackUrl={
+                  PlaceHolderImages.find(
+                    (p) => p.id === (form.watch('logoImageId') || 'academy-logo-1')
+                  )?.imageUrl
+                }
+                folderPath={`academies/${academyId}/cover`}
+                onUploaded={handleCoverUploaded}
+              />
+              <div className="border-t pt-4">
+                <MediaManager
+                  items={galleryMedia}
+                  folderPath={`academies/${academyId}/gallery`}
+                  maxItems={30}
+                  allowVideos={true}
+                  onChange={handleGalleryChanged}
+                  emptyTitle="Sin archivos multimedia personalizados"
+                  emptyDescription="Sube fotos y videos de muestra o pega enlaces de Cloudinary para esta academia."
+                />
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>
